@@ -49,11 +49,14 @@ ERROR=1
 
 STDOUT_OFFSET="    "
 
-USAGE="${STDOUT_OFFSET}Usage: ${0}\n"
-USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_user=<stash user> ]\n"
-USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_user_password=<stash user password> ]\n"
-USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_url=<stash base url> ]\n"
-USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ config=<path to config file> ]"
+SCRIPT_NAME="${0}"
+
+USAGE_ENDLINE="\n${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}"
+USAGE="${SCRIPT_NAME}${USAGE_ENDLINE}"
+USAGE="${USAGE}[ stash_user=<stash user> ]${USAGE_ENDLINE}"
+USAGE="${USAGE}[ stash_user_password=<stash user password> ]${USAGE_ENDLINE}"
+USAGE="${USAGE}[ stash_url=<stash base url> ]${USAGE_ENDLINE}"
+USAGE="${USAGE}[ config=<path to config file> ]"
 
 ################################################################################
 # VARIABLES
@@ -306,7 +309,7 @@ if [ ${exit_code} -ne ${SUCCESS} ]; then
         echo "${STDOUT_OFFSET}ERROR:  ${err_msg} ... processing halted"
         echo
         #echo "${STDOUT_OFFSET}Usage: ${0} [ stash_user=<stash user> | stash_user_password=<stash user password> | stash_url=<stash base url> ] || [ config=<path to config file> ]"
-        echo -ne "${USAGE}"
+        echo -ne "${STDOUT_OFFSET}USAGE:  ${USAGE}\n"
         echo
     fi
 
