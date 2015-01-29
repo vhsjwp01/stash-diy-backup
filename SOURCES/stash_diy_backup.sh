@@ -6,9 +6,9 @@
 ################################################################################
 # 20141028     Jason W. Plummer          Original.  This script uses the 
 #                                        Atlassian Stash REST API to perform
-#                                        backups using this DIY cookbook:
-#                                        https://confluence.atlassian.com/display/STASH/Using+Stash+DIY+Backup#UsingStashDIYBackup-Advanced-writingyourownDIYBackupusingtheRESTAPIs
-#
+#                                        backups
+# 20150129     Jason W. Plummer          Added support for passing a config
+#                                        file.  Standardized output
 
 ################################################################################
 # DESCRIPTION
@@ -22,13 +22,19 @@
 #     a loop cycle whereby a REST call is made every 2 seconds to check the 
 #     status of the scm-state and db-state variables.  Once both parameters 
 #     return a value of "DRAINED", the next phase of backup can begin.
-# 3.  Starts an rsync of directory ${src} to directory ${dest} via rsync.  The
-#     rsync process is launched in the background with all output written to
-#     a log.  This log is parsed every 2 seconds to compute the completion 
-#     ratio.  This ratio is then normalized and reported via REST interface
-#     to the Stash UI, for proper graphical representation of completion status
-# 4.  Once the rsync process is completed, the rsync log is backed up
+# 3.  Starts a data copy of path ${rsync_src} to path ${rsync_dest} via rsync.
+#     The rsync process is launched in the background with all output written
+#     to a log.  This log is parsed every 2 seconds to compute the completion
+#     ratio.  This ratio is then normalized and reported via REST interface to
+#     the Stash UI, for proper graphical representation of completion status
+# 4.  Once the rsync process is completed, the rsync log is backed up to 
+#     ${rsync_dest}
 # 5.  Unlocks Stash
+#
+# Theory of operations developed using this web resource:
+#
+#     https://confluence.atlassian.com/display/STASH/Using+Stash+DIY+Backup#UsingStashDIYBackup-Advanced-writingyourownDIYBackupusingtheRESTAPIs
+#
 
 ################################################################################
 # CONSTANTS
@@ -40,6 +46,14 @@ export TERM PATH
 
 SUCCESS=0
 ERROR=1
+
+STDOUT_OFFSET="    "
+
+USAGE="${STDOUT_OFFSET}Usage: ${0}\n"
+USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_user=<stash user> ]\n"
+USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_user_password=<stash user password> ]\n"
+USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ stash_url=<stash base url> ]\n"
+USAGE="${USAGE}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}[ config=<path to config file> ]"
 
 ################################################################################
 # VARIABLES
@@ -62,7 +76,7 @@ exit_code=${SUCCESS}
 #
 f__check_command() {
     return_code=${SUCCESS}
-    my_command="${1}"
+    my_command=`echo "${1}" | sed -e 's?\`??g'`
 
     if [ "${my_command}" != "" ]; then
         my_command_check=`which ${1} 2> /dev/null`
@@ -114,25 +128,49 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
     #----------------------------
     # NOTE: We need the following
     #----------------------------
-    # ${stash_user}                    # config file?
-    # ${stash_user_password}           # config file?
+    # ${stash_user}                    # command line or config file
+    # ${stash_user_password}           # command line or config file
     # ${stash_url}                     # fully qualified (with port if needed)
+    #                                    command line or config file
+    # ${rsync_src}}                    # A path (file or rsync share) from which
+    #                                    data will be copied
+    #                                    command line or config file
+    # ${rsync_dest}}                   # A path (file or rsync share) to which
+    #                                    data will be copied
+    #                                    command line or config file
 
     for arg in ${*} ; do
-        key=`echo "${arg}" | awk -F'=' '{print $1}'`
-        value=`echo "${arg}" | awk -F'=' '{print $NF}'`
+        key=`echo "${arg}" | ${my_awk} -F'=' '{print $1}' | ${my_sed} -e 's?\`??g'`
+        value=`echo "${arg}" | ${my_awk} -F'=' '{print $NF}' | ${my_sed} -e 's?\`??g'`
 
         case ${key} in
 
-            stash_user|stash_user_password|stash_url)
+            config|stash_user|stash_user_password|stash_url|rsync_src|rsync_dest)
                 eval "${key}=\"${value}\""
+            ;;
+
+            *)
+                # Exit quietly, peacefully, and enjoy it
+                exit
             ;;
 
         esac
 
     done
 
-    if [ "${stash_user}" != "" -a "${stash_user_password}" != "" -a "${stash_url}" != "" ]; then
+    # If we were given a config file, then make sure it has in it
+    # the pieces we need
+    #
+    if [ "${config}" != "" -a -r "${config}" ]; then
+
+        for key in stash_user stash_user_password stash_url rsync_src rsync_dest ; do
+            value=`${my_egrep} "^${key}=" "${config}" | ${my_awk} -F'=' '{print $NF}' | ${my_sed} -e 's?\"??g' -e 's?\`??g'`
+            eval "${key}=\"${value}\""
+        done
+
+    fi 
+
+    if [ "${stash_user}" != "" -a "${stash_user_password}" != "" -a "${stash_url}" != "" -a "${rsync_src}" != "" -a "${rsync_dest}" != "" ]; then
         err_msg=""
         exit_code=${SUCCESS}
     fi
@@ -164,7 +202,7 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
         exit_code=${ERROR}
     else
         echo "Successfully locked Stash instance \"${stash_url}\""
-        echo "    Unlock Token: ${stash_lock_token}"
+        echo "${STDOUT_OFFSET}Unlock Token: ${stash_lock_token}"
     fi
 
 fi
@@ -177,11 +215,11 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
     stash_backup_token=`${my_curl} -s -u "${stash_user}:${stash_user_password}" -X POST -H "X-Atlassian-Maintenance-Token: ${stash_lock_token}" -H "Accept: application/json" -H "Content-type: application/json" "${stash_url}/${backup_url}" 2> /dev/null | ${my_jq} ".id" 2> /dev/null | ${my_sed} -e 's/"//g' 2> /dev/null`
 
     if [ "${stash_backup_token}" = "" ]; then
-        err_msg="    Failed to start backup of Stash instance \"${stash_url}\""
+        err_msg="${STDOUT_OFFSET}Failed to start backup of Stash instance \"${stash_url}\""
         exit_code=${ERROR}
     else
-        echo "    Successfully started backup of Stash instance \"${stash_url}\""
-        echo "        Backup Token: ${stash_backup_token}"
+        echo "${STDOUT_OFFSET}Successfully started backup of Stash instance \"${stash_url}\""
+        echo "${STDOUT_OFFSET}${STDOUT_OFFSET}Backup Token: ${stash_backup_token}"
     fi
 
 fi
@@ -200,7 +238,7 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
         ${my_sleep} 2
     done
 
-    echo "    Successfully completed backup of Stash instance \"${stash_url}\""
+    echo "${STDOUT_OFFSET}Successfully completed backup of Stash instance \"${stash_url}\""
 fi
 
 # WHAT: Perform an rsync backup of Stash
@@ -208,12 +246,10 @@ fi
 #
 if [ ${exit_code} -eq ${SUCCESS} ]; then
     logfile="/tmp/rsync-stash.`${my_date} +%Y%m%d`.log"
-    src="/var/atlassian/application-data/stash/"
-    dest="/home/backup"
     rsync_status=0
 
-    echo "    Starting rsync backup of \"${src}\" to \"${dest}\""
-    ${my_rsync} -avHS --progress "${src}" "${dest}" > "${logfile}" 2>&1 &
+    echo "${STDOUT_OFFSET}Starting rsync backup of \"${rsync_src}\" to \"${rsync_dest}\""
+    ${my_rsync} -avHS --progress "${rsync_src}" "${rsync_dest}" > "${logfile}" 2>&1 &
     ${my_sleep} 1
 
     while [ ${rsync_status} -lt 100 ]; do
@@ -224,7 +260,7 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
 
             # Avoid round off errors while rsync is finishing plowing through a large number of files
             if [ ${rsync_status} -eq 100 ]; then
-                let rsync_proc=`${my_ps} -aef | ${my_egrep} "${my_rsync}*.*${src}*.*${dest}" | ${my_egrep} -v grep | ${my_wc} -l`
+                let rsync_proc=`${my_ps} -aef | ${my_egrep} "${my_rsync}*.*${rsync_src}*.*${rsync_dest}" | ${my_egrep} -v grep | ${my_wc} -l | ${my_awk} '{print $1}'`
 
                 if [ ${rsync_proc} -gt 0 ]; then
                     rsync_status=99
@@ -233,16 +269,16 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
             fi
 
             # Update the Stash interface
-            echo "        Stash rsync backup status: ${rsync_status}%"
+            echo "${STDOUT_OFFSET}${STDOUT_OFFSET}Stash rsync backup status: ${rsync_status}%"
             ${my_curl} -s -u "${stash_user}:${stash_user_password}" -X POST -H "Accept: application/json" -H "Content-type: application/json" "${stash_url}/mvc/admin/backups/progress/client?token=${stash_lock_token}&percentage=${rsync_status}" > /dev/null 2>&1
         fi
 
         ${my_sleep} 2
     done
 
-    # Copy over the rsync log to ${dest}/export
-    mv "${logfile}" "${dest}/export"
-    echo "    Completed rsync backup of \"${src}\" to \"${dest}\""
+    # Copy over the rsync log to ${rsync_dest}
+    ${my_rsync} "${logfile}" "${rsync_dest}"
+    echo "${STDOUT_OFFSET}Completed rsync backup of \"${rsync_src}\" to \"${rsync_dest}\""
 fi
 
 # WHAT: Unlock Stash
@@ -267,9 +303,10 @@ if [ ${exit_code} -ne ${SUCCESS} ]; then
 
     if [ "${err_msg}" != "" ]; then
         echo
-        echo "    ERROR:  ${err_msg} ... processing halted"
+        echo "${STDOUT_OFFSET}ERROR:  ${err_msg} ... processing halted"
         echo
-        echo "  Usage: ${0} [ stash_user=<stash user> | stash_user_password=<stash user password> | stash_url=<stash base url> ]"
+        #echo "${STDOUT_OFFSET}Usage: ${0} [ stash_user=<stash user> | stash_user_password=<stash user password> | stash_url=<stash base url> ] || [ config=<path to config file> ]"
+        echo -ne "${USAGE}"
         echo
     fi
 
