@@ -9,6 +9,8 @@
 #                                        backups
 # 20150129     Jason W. Plummer          Added support for passing a config
 #                                        file.  Standardized output
+# 20150130     Jason W. Plummer          Added command line options to the 
+#                                        DESCRIPTION section
 
 ################################################################################
 # DESCRIPTION
@@ -35,6 +37,20 @@
 #
 #     https://confluence.atlassian.com/display/STASH/Using+Stash+DIY+Backup#UsingStashDIYBackup-Advanced-writingyourownDIYBackupusingtheRESTAPIs
 #
+# OPTIONS:
+#
+# config=<configuration file>              - The full path to a config file 
+#                                            which will be used to provide
+#                                            mandatory runtime key=value pairs.
+#                                            Must be in Bourne shell syntax
+# stash_user=<username>                    - A stash username that has the 
+#                                            proper permissions to perform a
+#                                            backup
+# stash_user_password=<plaintext password> - The password associated with the
+#                                            ${stash_user}
+# stash_url=<fully qualified URL>          - The fully qualified URL to a stash
+#                                            server REST API
+# 
 
 ################################################################################
 # CONSTANTS
@@ -53,10 +69,10 @@ SCRIPT_NAME="${0}"
 
 USAGE_ENDLINE="\n${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}${STDOUT_OFFSET}"
 USAGE="${SCRIPT_NAME}${USAGE_ENDLINE}"
+USAGE="${USAGE}[ config=<path to config file> ]${USAGE_ENDLINE}"
 USAGE="${USAGE}[ stash_user=<stash user> ]${USAGE_ENDLINE}"
 USAGE="${USAGE}[ stash_user_password=<stash user password> ]${USAGE_ENDLINE}"
-USAGE="${USAGE}[ stash_url=<stash base url> ]${USAGE_ENDLINE}"
-USAGE="${USAGE}[ config=<path to config file> ]"
+USAGE="${USAGE}[ stash_url=<stash base url> ]"
 
 ################################################################################
 # VARIABLES
@@ -308,11 +324,11 @@ if [ ${exit_code} -ne ${SUCCESS} ]; then
         echo
         echo "${STDOUT_OFFSET}ERROR:  ${err_msg} ... processing halted"
         echo
-        #echo "${STDOUT_OFFSET}Usage: ${0} [ stash_user=<stash user> | stash_user_password=<stash user password> | stash_url=<stash base url> ] || [ config=<path to config file> ]"
-        echo -ne "${STDOUT_OFFSET}USAGE:  ${USAGE}\n"
-        echo
     fi
 
+    echo 
+    echo -ne "${STDOUT_OFFSET}USAGE:  ${USAGE}\n"
+    echo
 fi
 
 exit ${exit_code}
