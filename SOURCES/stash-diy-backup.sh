@@ -11,6 +11,8 @@
 #                                        file.  Standardized output
 # 20150130     Jason W. Plummer          Added command line options to the 
 #                                        DESCRIPTION section
+# 20150316     Jason W. Plummer          Added trap to unlock stash on non-zero
+#                                        exit status
 
 ################################################################################
 # DESCRIPTION
@@ -81,6 +83,10 @@ USAGE="${USAGE}[ stash_url=<stash base url> ]"
 err_msg=""
 exit_code=${SUCCESS}
 
+stash_trap_dir="/tmp/stash-diy-backup/$$"
+trap_script="unlock.sh"
+trap "if [ -e \"${stash_trap_dir}/${trap_script}\" ]; then sh \"${stash_trap_dir}/${trap_script}\" ; rm -rf \"${stash_trap_dir}\" ; fi" 0 1 2 3 15
+
 ################################################################################
 # SUBROUTINES
 ################################################################################
@@ -125,7 +131,7 @@ f__check_command() {
 #
 if [ ${exit_code} -eq ${SUCCESS} ]; then
 
-    for command in awk bc curl date egrep find jq ps rsync sed sleep tail wc ; do
+    for command in awk bc chmod curl date egrep find jq ps rsync sed sleep tail wc ; do
         unalias ${command} > /dev/null 2>&1
         f__check_command "${command}"
 
@@ -222,6 +228,22 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
     else
         echo "Successfully locked Stash instance \"${stash_url}\""
         echo "${STDOUT_OFFSET}Unlock Token: ${stash_lock_token}"
+
+        # Generate unlock script /tmp/stash-diy-backup/$$/unlock.sh
+        # that can be called via trap should this script exit unexpectedly
+        if [ ! -d "${stash_trap_dir}" ]; then
+            mkdir -p "${stash_trap_dir}"
+            touch "${stash_trap_dir}/${trap_script}"
+            echo "#!/bin/bash"                                                                  > "${stash_trap_dir}/${trap_script}"
+            echo "set -x"                                                                      >> "${stash_trap_dir}/${trap_script}"
+            echo "echo \"Attempting to unlock stash ...\""                                     >> "${stash_trap_dir}/${trap_script}"
+            echo "is_unlocked=\`${my_curl} -s -u \"${stash_user}:${stash_user_password}\" -X DELETE -H \"Accept: application/json\" -H \"Content-type: application/json\" \"${stash_url}/mvc/maintenance/lock?token=${stash_lock_token}\" | ${my_jq} \".\" | ${my_wc} -l | ${my_awk} '{print \$1}'\`" >> "${stash_trap_dir}/${trap_script}"
+            echo "if [ \${is_unlocked} -gt 0 ]; then"                                          >> "${stash_trap_dir}/${trap_script}"
+            echo "    echo \"An error occured unlocking Stash instance \\\"${stash_url}\\\"\"" >> "${stash_trap_dir}/${trap_script}"
+            echo "fi"                                                                          >> "${stash_trap_dir}/${trap_script}"
+            chmod 400 "${stash_trap_dir}/${trap_script}"
+        fi
+
     fi
 
 fi
@@ -311,6 +333,7 @@ if [ ${exit_code} -eq ${SUCCESS} ]; then
         exit_code=${ERROR}
     else
         echo "Successfully unlocked Stash instance \"${stash_url}\""
+        rm -rf "${stash_trap_dir}"
     fi
 
 fi
