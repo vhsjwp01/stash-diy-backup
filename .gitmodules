@@ -1,3 +1,3 @@
 [submodule "rpm-build-script"]
 	path = rpm-build-script
-	url = ssh://git@stash.ingramcontent.com:7999/rpm/rpm-build-script.git
+	url = git@github.com:vhsjwp01/rpm-build-script.git

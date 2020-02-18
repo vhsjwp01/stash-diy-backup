@@ -2,7 +2,7 @@
 %define uek %( uname -r | egrep -i uek | wc -l | awk '{print $1}' )
 %define rpm_arch %( uname -p )
 %define rpm_author Jason W. Plummer
-%define rpm_author_email jason.plummer@ingramcontent.com
+%define rpm_author_email vhsjwp01@gmail.com
 %define distro_id %( lsb_release -is )
 %define distro_ver %( lsb_release -rs )
 %define distro_major_ver %( echo "%{distro_ver}" | awk -F'.' '{print $1}' )
@@ -13,7 +13,7 @@ Release: 1.EL%{distro_major_ver}
 License: GNU
 Group: Infrastructure/Backup
 BuildRoot: %{_tmppath}/%{name}-root
-URL: https://stash.ingramcontent.com/projects/RPM/repos/stash-diy-backup/browse
+URL: https://github.com/vhsjwp01/stash-diy-backup
 Version: 1.0
 BuildArch: noarch
 
